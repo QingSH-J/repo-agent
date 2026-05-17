@@ -1,0 +1,9 @@
+.venv/
+*.egg-info/
+.repo_agent_history
+__pycache__/
+*.pyc
+.env
+.vscode/
+.DS_Store
+bubble_sort.py
