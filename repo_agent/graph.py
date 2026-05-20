@@ -6,6 +6,7 @@ from repo_agent.graph_state import AgentGraphState
 from repo_agent.session import RepoSession
 from repo_agent import display
 from repo_agent.plan import create_plan, parse_plan_steps
+from repo_agent.verifier import verify_working_tree
 
 def build_agent_graph(repo_session: RepoSession):
     graph = StateGraph(AgentGraphState)
@@ -21,6 +22,13 @@ def build_agent_graph(repo_session: RepoSession):
         plan_steps = parse_plan_steps(plan)
         display.plan_checklist(plan_steps)
         return {"plan": plan, "plan_steps": plan_steps}
+    
+    def verify_node(state: AgentGraphState) -> AgentGraphState:
+        display.agent_step("verify", "verifying execution plan")
+        verification_report = verify_working_tree(repo_session)
+        display.verification_report(verification_report)
+        return {"verification": verification_report}
+
 
     def act_node(state: AgentGraphState) -> AgentGraphState:
         plan_steps = [dict(step) for step in state.get("plan_steps", [])]
@@ -54,10 +62,12 @@ Task:
     graph.add_node("build_context", build_context_node)
     graph.add_node("act", act_node)
     graph.add_node("plan", plan_node)
+    graph.add_node("verify", verify_node)
     graph.set_entry_point("build_context")
     graph.add_edge("build_context", "plan")
     graph.add_edge("plan", "act")
-    graph.add_edge("act", END)
+    graph.add_edge("act", "verify")
+    graph.add_edge("verify", END)
 
     return graph.compile()
 
