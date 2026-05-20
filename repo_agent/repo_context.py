@@ -92,3 +92,11 @@ def resolve_git_root(path: Path) -> Path:
     )
     return Path(result.stdout.strip()).resolve()
 
+
+"""
+Get Git Tree
+"""
+
+def get_git_tree(repo_path: Path):
+    return run_git(repo_path, ["log", "--graph", "--oneline", "--decorate", "--all", "-n", "30"])
+

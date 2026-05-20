@@ -1,0 +1,53 @@
+from langgraph.graph import END, StateGraph
+
+from repo_agent.agent import handle_user_task
+from repo_agent.context_engine import build_basic_context
+from repo_agent.graph_state import AgentGraphState
+from repo_agent.session import RepoSession
+from repo_agent import display
+from repo_agent.plan import create_plan
+
+def build_agent_graph(repo_session: RepoSession):
+    graph = StateGraph(AgentGraphState)
+
+    def build_context_node(state: AgentGraphState) -> AgentGraphState:
+        display.agent_step("build_context", "collecting repo files, git status, diff")
+        context = build_basic_context(state['task'], repo_session)
+        return {"context": context}
+    
+    def plan_node(state: AgentGraphState) -> AgentGraphState:
+        display.agent_step("plan", "creating execution plan")
+        plan = create_plan(state['task'], state.get('context', ''), repo_session)
+        return {"plan": plan}
+
+    def act_node(state: AgentGraphState) -> AgentGraphState:
+        task_with_context = f"""Use this repository context to answer the task.
+
+Repository Context:
+{state["context"]}
+
+Execution Plan:
+{state["plan"]}
+
+Task:
+{state["task"]}
+"""
+        result = handle_user_task(task_with_context, repo_session)
+        return {"result": result}
+    
+    graph.add_node("build_context", build_context_node)
+    graph.add_node("act", act_node)
+    graph.add_node("plan", plan_node)
+    graph.set_entry_point("build_context")
+    graph.add_edge("build_context", "plan")
+    graph.add_edge("plan", "act")
+    graph.add_edge("act", END)
+
+    return graph.compile()
+
+def run_graph_agent(task: str, repo_session: RepoSession) -> str:
+    app = build_agent_graph(repo_session)
+    result = app.invoke({"task": task})
+    return result["result"]
+
+

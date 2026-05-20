@@ -5,6 +5,7 @@ class RepoSession:
         self.message : list[dict[str, str]] = []
         self.repo_files: list[str] = []
         self.repo_branch : str | None = None
+        self.session_id : str | None = None
 
     @property
     def is_repo_loaded(self) -> bool:

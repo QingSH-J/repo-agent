@@ -56,7 +56,13 @@ def help() -> None:
     table.add_row("/commit-message", "Suggest a commit message for staged changes")
     table.add_row("/commit <message>", "Commit staged changes")
     table.add_row("/write <path>", "Write content to a file (opens editor prompt)")
+    table.add_row("/git-tree", "Show recent git commit history as a tree")
+    table.add_row("/agent <task_description>", "Run a LangGraph agent to complete a task using repository context")
+    table.add_row("/session", "Show current session info")
+    table.add_row("/sessions", "List saved sessions")
+    table.add_row("/session-summary", "Summarize the current session with an LLM")
     console.print(Panel(table, title="Commands", border_style="cyan"))
+
 
 
 def status(
@@ -265,3 +271,72 @@ def write_success(path: str) -> None:
 
 def write_skipped(path: str) -> None:
     console.print(f"[dim]Skipped write to {path}.[/dim]")
+
+
+
+"""
+Show recent git commit history as a tree
+"""
+def git_tree(tree_output: str) -> None:
+    if not tree_output:
+        warning("No git history found.")
+        return
+    
+    syntax = Syntax(tree_output, "text", line_numbers=False, word_wrap=False)
+    console.print(Panel(syntax, title="Git Commit History", border_style="cyan"))
+
+
+
+"""
+LangGraph Agent Display
+"""
+def agent_start(task: str) -> None:
+    console.print()
+    console.print(Panel(task, title="Agent Task", border_style="cyan"))
+
+
+def agent_step(name: str, detail: str | None = None) -> None:
+    console.print(f"[cyan]>[/cyan] [bold]{name}[/bold]")
+    if detail:
+        console.print(f"  [dim]- {detail}[/dim]")
+
+
+def agent_success(message: str = "Agent task complete.") -> None:
+    console.print(f"[green]OK[/green] {message}")
+
+
+def agent_error(message: str) -> None:
+    console.print(f"[red]Error:[/red] {message}")
+
+
+def agent_result(result: str) -> None:
+    console.print(Panel(Markdown(result), title="Agent Result", border_style="green"))
+
+
+
+"""
+Session Display
+"""
+def session_info(session_id: str | None, session_path: str | None) -> None:
+    if not session_id:
+        warning("No active session. Use /open <repo_path> first.")
+        return
+
+    table = Table(show_header=False, box=None)
+    table.add_row("Session", str(session_id))
+    table.add_row("Path", str(session_path) or "")
+    console.print(Panel(table, title="Session", border_style="magenta"))
+
+
+def sessions(paths: list[Path]) -> None:
+    if not paths:
+        warning("No sessions found.")
+        return
+
+    rendered = "\n".join(path.name for path in paths)
+    console.print(Panel(rendered, title="Sessions", border_style="magenta"))
+
+def session_summary(summary: str, path: str | None = None) -> None:
+    console.print(Panel(Markdown(summary), title="Session Summary", border_style="magenta"))
+    if path:
+        info(f"Saved summary: {path}")

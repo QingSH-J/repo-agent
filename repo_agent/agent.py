@@ -5,6 +5,12 @@ from repo_agent.lc_tools import build_langchain_tools
 from repo_agent.llm import build_llm
 from repo_agent.session import RepoSession
 from repo_agent.repo_context import get_status_diff
+import json
+
+from repo_agent.session_store import (
+    write_session_summary,
+    read_session_events,
+)
 
 SYSTEM_PROMPT = """You are Repo-Agent, a coding assistant working inside a local git repository.
 
@@ -41,6 +47,36 @@ Rules:
 - If there are no staged changes, say: No staged changes.
 """
 
+SESSION_SUMMARY_AGENT_PROMPT = """You summarize Repo-Agent session logs.
+
+You may use repository tools to inspect files mentioned in the session.
+Produce a concise Markdown summary with these sections:
+
+# Session Summary
+
+## User Goals
+- ...
+
+## Work Completed
+- ...
+
+## Important Files
+- ...
+
+## Decisions
+- ...
+
+## Errors And Fixes
+- ...
+
+## Next Steps
+- ...
+
+Rules:
+- Do not invent work that is not supported by session events or tool results.
+- Preserve important file names, commands, and design decisions.
+- Keep it concise but useful for future continuation.
+"""
 
 def handle_user_task(user_input: str, repo_session: RepoSession) -> str:
     if not repo_session.is_repo_loaded:
@@ -97,3 +133,48 @@ def suggest_commit_message(repo_session: RepoSession) -> str:
     )
 
     return result["messages"][-1].content.strip()
+
+
+
+
+"""
+Write a SessionSummary for a completed Repo-Agent session, based on the session events.
+"""
+
+def summarize_current_session(repo_session: RepoSession) -> tuple[str, str]:
+    if not repo_session.is_repo_loaded or not repo_session.session_id:
+        return "No session to summarize.", ""
+    
+    events = read_session_events(repo_session.repo_path, repo_session.session_id)
+
+    if not events:
+        return "No events found for this session.", ""
+    
+    llm = build_llm()
+    tools =  build_langchain_tools(repo_session)
+    agent = create_agent(
+        model=llm,
+        system_prompt=SESSION_SUMMARY_AGENT_PROMPT,
+        tools=tools
+    )
+
+    result = agent.invoke(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "Summarize these Repo-Agent session events. "
+                        "Use tools only if you need to inspect files mentioned in the events.\n\n"
+                        + json.dumps(events, ensure_ascii=False, indent=2)
+                    ),
+                }
+            ]
+        }
+    )
+
+    summary = result["messages"][-1].content.strip()
+
+    summary_path = write_session_summary(repo_session.repo_path, repo_session.session_id, summary)
+
+    return summary, str(summary_path)

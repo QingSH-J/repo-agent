@@ -6,7 +6,7 @@ def get_repo_agent_home():
     """
     Get the home directory of the repo agent.
     """
-    return Path(os.getenv("REPO_AGENT_HOME", Path.home() / ".repo_agent")).expanduser()
+    return Path(os.getenv("REPO_AGENT_HOME", Path.home() / ".repo-agent")).expanduser()
 
 def ensure_repo_agent_home():
     """

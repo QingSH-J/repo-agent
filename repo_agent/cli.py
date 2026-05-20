@@ -15,11 +15,20 @@ from repo_agent.repo_context import (
     has_staged_changes,
     commit_staged_changes,
     resolve_git_root,
+    get_git_tree
 )
 from repo_agent.tools import read_repo_file, resolve_repo_file, search_repo_files, run_repo_command, write_repo_file
-from repo_agent.agent import handle_user_task, suggest_commit_message
+from repo_agent.agent import handle_user_task, suggest_commit_message, summarize_current_session
 from repo_agent.path import get_history_path
 
+from repo_agent.graph import run_graph_agent
+
+from repo_agent.session_store import (
+    list_sessions,
+    create_session,
+    append_session_event,
+    get_session_path,
+)
 
 
 
@@ -68,10 +77,28 @@ def handle_command(user_input: str, repo_session: RepoSession) -> bool:
         repo_session.repo_path = repo_path
         repo_session.repo_branch = branch
         repo_session.repo_files = files
+
+        repo_session.session_id = create_session(repo_session.repo_path)
+
+        append_session_event(
+            repo_session.repo_path,
+            repo_session.session_id,
+            {
+                "type": "repo_opened",
+                "branch": repo_session.repo_branch,
+                "files": repo_session.repo_files,
+            }
+        )
+
+        display.info(f"Repository opened: {repo_session.repo_path}")
+        
         
         display.success(f"Repository loaded: {repo_session.repo_path}")
         display.info(f"Current branch: {repo_session.repo_branch or '(detached)'}")
         display.info(f"Files in repository: {len(repo_session.repo_files)}")
+
+
+
         return True
     
 
@@ -343,7 +370,99 @@ def handle_command(user_input: str, repo_session: RepoSession) -> bool:
             display.error(f"Error writing file: {e}")
 
         return True
+    
+    if command == "/git-tree":
+        if not repo_session.is_repo_loaded:
+            display.warning("No repository loaded. Use /open <repo_path> to load a repository.")
+            return True
+        
+        try:
+            tree = get_git_tree(repo_session.repo_path)
+        except subprocess.CalledProcessError as e:
+            display.error(f"Error getting git tree: {e.stderr}")
+            return True
+        
+        display.git_tree(tree)
+        return True
+    
+    if command == "/agent":
+        if not repo_session.is_repo_loaded:
+            display.warning("No repository loaded. Use /open <repo_path> to load a repository.")
+            return True
+        
+        if not args:
+            display.warning("Usage: /agent <task_description>")
+            return True
+        
+        record_event(
+            repo_session,
+            {
+                "type": "agent_task",
+                "text": args,
+            }
+        )
 
+        display.agent_start(args)
+        try: 
+            result = run_graph_agent(args, repo_session)
+        except Exception as e:
+            display.error(f"Error running agent: {e}")
+            return True
+        
+        record_event(
+            repo_session,
+            {
+                "type": "agent_result",
+                "text": result,
+            }
+        )
+        
+        display.agent_success()
+        display.agent_result(result)
+        
+
+        return True
+    
+
+    #Session Commands
+    if command == "/session":
+        if not repo_session.is_repo_loaded:
+            display.warning("No repository loaded. Use /open <repo_path> to load a repository.")
+            return True
+        
+        session_path = None
+        if repo_session.session_id:
+            session_path = get_session_path(repo_session.repo_path, repo_session.session_id)
+        
+        display.session_info(repo_session.session_id, session_path)
+        return True
+    
+    #Session command 2
+    if command == "/sessions":
+        if not repo_session.is_repo_loaded:
+            display.warning("No repository loaded. Use /open <repo_path> to load a repository.")
+            return True
+        
+        paths = list_sessions(repo_session.repo_path)
+        display.sessions(paths)
+        return True
+    
+    #Session summary command
+    if command == "/session-summary":
+        if not repo_session.is_repo_loaded:
+            display.warning("No repository loaded. Use /open <repo_path> to load a repository.")
+            return True
+        try:
+            summary, path = summarize_current_session(repo_session)
+        except Exception as e:
+            display.error(f"Error summarizing session: {e}")
+            return True
+        display.session_summary(summary, path)
+        return True
+
+    """
+    tackle the unknown command case.
+    """
     display.warning(f"Unknown command: {command}. Type /help.")
     return True
     
@@ -355,11 +474,45 @@ def handle_natural_language(user_input: str, repo_session: RepoSession) -> bool:
     
     repo_session.message.append({"role": "user", "content": user_input})
 
+    record_event(
+        repo_session,
+        {
+            "type": "user_input",
+            "text": user_input,
+        }
+    )
+
     response = handle_user_task(user_input, repo_session)
     display.assistant(response)
 
+    record_event(
+        repo_session,
+        {
+            "type": "assistant_response",
+            "text": response,
+        }
+    )
     repo_session.message.append({"role": "assistant", "content": response})
     return True
+
+"""
+Help Functions
+"""
+def record_event(repo_session: RepoSession, event: dict) -> None:
+    if not repo_session.is_repo_loaded or not repo_session.session_id:
+        return
+    
+    append_session_event(
+        repo_session.repo_path,
+        repo_session.session_id,
+        event,
+    )
+
+
+
+
+
+
 
 def main() -> None:
     display.banner()
