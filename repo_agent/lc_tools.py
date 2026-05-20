@@ -6,7 +6,7 @@ from repo_agent.session import RepoSession
 from repo_agent.tools import read_repo_file, resolve_repo_file, search_repo_files, write_repo_file
 
 
-def build_langchain_tools(repo_session: RepoSession):
+def build_langchain_tools(repo_session: RepoSession, include_write: bool = True):
 
     @tool
     def read_file(path: str) -> str:
@@ -105,4 +105,8 @@ def build_langchain_tools(repo_session: RepoSession):
         except Exception as exc:
             return f"Error writing file: {exc}"
 
-    return [read_file, search_code, git_diff, list_files, write_file]
+    tools = [read_file, search_code, git_diff, list_files]
+    if include_write:
+        tools.append(write_file)
+
+    return tools

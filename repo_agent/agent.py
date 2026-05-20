@@ -151,7 +151,7 @@ def summarize_current_session(repo_session: RepoSession) -> tuple[str, str]:
         return "No events found for this session.", ""
     
     llm = build_llm()
-    tools =  build_langchain_tools(repo_session)
+    tools = build_langchain_tools(repo_session, include_write=False)
     agent = create_agent(
         model=llm,
         system_prompt=SESSION_SUMMARY_AGENT_PROMPT,

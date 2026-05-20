@@ -21,4 +21,5 @@ class AgentGraphState(TypedDict, total=False):
     plan: str
     plan_steps: list[PlanStep]
     result: str
+    verification: dict[str, object]
 

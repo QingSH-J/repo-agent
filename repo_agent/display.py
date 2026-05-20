@@ -373,3 +373,53 @@ def plan_checklist(steps: list[dict[str, str]], title: str = "Plan") -> None:
             table.add_row(mark, text)
 
     console.print(Panel(table, title=title, border_style="cyan"))
+
+
+""""
+Function for displaying a verification result with details
+"""
+
+def verification_report(report: dict[str, object]) -> None:
+    table = Table(show_header=False, box=None)
+    table.add_column("Key", style="cyan", no_wrap=True)
+    table.add_column("Value")
+
+    is_dirty = bool(report.get("is_dirty"))
+    status_label = "[yellow]dirty[/yellow]" if is_dirty else "[green]clean[/green]"
+
+    table.add_row("Working Tree", status_label)
+    table.add_row("Staged Files", str(len(report.get("staged_files", []))))
+    table.add_row("Unstaged Files", str(len(report.get("unstaged_files", []))))
+    table.add_row("Untracked Files", str(len(report.get("untracked_files", []))))
+
+    console.print(Panel(table, title="Verification", border_style="magenta"))
+
+    status = str(report.get("status") or "")
+    if status:
+        console.print(
+            Panel(
+                Syntax(status, "text", line_numbers=False, word_wrap=False),
+                title="Git Status",
+                border_style="yellow",
+            )
+        )
+
+    unstaged_diff = str(report.get("unstaged_diff") or "")
+    if unstaged_diff:
+        console.print(
+            Panel(
+                Syntax(unstaged_diff, "diff", line_numbers=False, word_wrap=False),
+                title="Unstaged Diff",
+                border_style="yellow",
+            )
+        )
+
+    staged_diff = str(report.get("staged_diff") or "")
+    if staged_diff:
+        console.print(
+            Panel(
+                Syntax(staged_diff, "diff", line_numbers=False, word_wrap=False),
+                title="Staged Diff",
+                border_style="green",
+            )
+        )
