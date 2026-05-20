@@ -6,7 +6,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.tree import Tree
-
+from rich.text import Text
 console = Console()
 
 
@@ -340,3 +340,36 @@ def session_summary(summary: str, path: str | None = None) -> None:
     console.print(Panel(Markdown(summary), title="Session Summary", border_style="magenta"))
     if path:
         info(f"Saved summary: {path}")
+
+
+
+
+"""
+Function to display the state of plan steps
+"""
+
+def plan_checklist(steps: list[dict[str, str]], title: str = "Plan") -> None:
+    if not steps:
+        warning("No plan steps found.")
+        return
+    
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_column("Status", no_wrap=True, width=5)
+    table.add_column("Step")
+
+    marks = {
+        "pending": Text("[ ]", style="dim"),
+        "in_progress": Text("[>]", style="cyan"),
+        "completed": Text("[x]", style="green"),
+        "failed": Text("[!]", style="red"),
+        "skipped": Text("[-]", style="yellow"),
+    }
+
+    for step in steps:
+        status = step.get("status", "pending")
+        text = step.get("text", "").strip()
+        mark = marks.get(status, marks["pending"])
+        if text:
+            table.add_row(mark, text)
+
+    console.print(Panel(table, title=title, border_style="cyan"))

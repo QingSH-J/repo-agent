@@ -5,7 +5,7 @@ from repo_agent.context_engine import build_basic_context
 from repo_agent.graph_state import AgentGraphState
 from repo_agent.session import RepoSession
 from repo_agent import display
-from repo_agent.plan import create_plan
+from repo_agent.plan import create_plan, parse_plan_steps
 
 def build_agent_graph(repo_session: RepoSession):
     graph = StateGraph(AgentGraphState)
@@ -18,9 +18,18 @@ def build_agent_graph(repo_session: RepoSession):
     def plan_node(state: AgentGraphState) -> AgentGraphState:
         display.agent_step("plan", "creating execution plan")
         plan = create_plan(state['task'], state.get('context', ''), repo_session)
-        return {"plan": plan}
+        plan_steps = parse_plan_steps(plan)
+        display.plan_checklist(plan_steps)
+        return {"plan": plan, "plan_steps": plan_steps}
 
     def act_node(state: AgentGraphState) -> AgentGraphState:
+        plan_steps = [dict(step) for step in state.get("plan_steps", [])]
+
+        if plan_steps:
+            plan_steps[0]["status"] = "in_progress"
+            display.plan_checklist(plan_steps, title="Plan Progress")
+
+
         task_with_context = f"""Use this repository context to answer the task.
 
 Repository Context:
@@ -33,7 +42,14 @@ Task:
 {state["task"]}
 """
         result = handle_user_task(task_with_context, repo_session)
-        return {"result": result}
+
+        completed_steps = [
+            {**step, "status": "completed"}
+            for step in plan_steps
+        ]
+
+        display.plan_checklist(completed_steps, title="Plan Completed")
+        return {"result": result, "plan_steps": completed_steps}
     
     graph.add_node("build_context", build_context_node)
     graph.add_node("act", act_node)

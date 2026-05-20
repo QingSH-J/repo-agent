@@ -1,4 +1,13 @@
-from typing import TypedDict
+from typing import Literal, TypedDict
+
+"""
+Plan state for plan checklist
+"""
+class PlanStep(TypedDict):
+    text: str
+    status: Literal["pending", "in_progress", "completed", "failed", "skipped"]
+
+
 
 class AgentGraphState(TypedDict, total=False):
     task: str
@@ -10,5 +19,6 @@ class AgentGraphState(TypedDict, total=False):
     git_diff: str
     context: str
     plan: str
+    plan_steps: list[PlanStep]
     result: str
 
