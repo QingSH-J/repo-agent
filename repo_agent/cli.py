@@ -2,6 +2,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from pathlib import Path
 import subprocess
+from langchain_core.messages import HumanMessage, SystemMessage
 from repo_agent import display
 from repo_agent.session import RepoSession
 from repo_agent.repo_context import (
@@ -19,15 +20,18 @@ from repo_agent.repo_context import (
 )
 from repo_agent.tools import read_repo_file, resolve_repo_file, search_repo_files, run_repo_command, write_repo_file
 from repo_agent.agent import handle_user_task, suggest_commit_message, summarize_current_session
+from repo_agent.llm import build_chat_model
 from repo_agent.path import get_history_path
 
 from repo_agent.graph import run_graph_agent
+from repo_agent.router import route_agent_input
 
 from repo_agent.session_store import (
     list_sessions,
     create_session,
     append_session_event,
     get_session_path,
+    read_session_events,
 )
 
 
@@ -394,35 +398,8 @@ def handle_command(user_input: str, repo_session: RepoSession) -> bool:
             repo_session.agent_mode = True
             display.success("Agent mode enabled. Enter a task for the agent to perform.")
             return True
-        
-        record_event(
-            repo_session,
-            {
-                "type": "agent_task",
-                "text": args,
-            }
-        )
 
-        display.agent_start(args)
-        try: 
-            result = run_graph_agent(args, repo_session)
-        except Exception as e:
-            display.error(f"Error running agent: {e}")
-            return True
-        
-        record_event(
-            repo_session,
-            {
-                "type": "agent_result",
-                "text": result,
-            }
-        )
-        
-        display.agent_success()
-        display.agent_result(result)
-        
-
-        return True
+        return handle_agent_input(args, repo_session)
     
     """return to normal mode"""
     if command == "/back":
@@ -525,19 +502,58 @@ def handle_agent_input(user_input: str, repo_session: RepoSession) -> bool:
     if not repo_session.is_repo_loaded:
         display.warning("No repository loaded. Use /open <repo_path> to load a repository.")
         return True
+
+    route = route_agent_input(user_input)
+    display.info(
+        f"Route: {route['intent']} "
+        f"(write_allowed={route['write_allowed']}, run_command_allowed={route['run_command_allowed']})"
+    )
     
     record_event(
         repo_session,
         {
             "type": "agent_task",
             "text": user_input,
+            "route": route,
         }
     )
+
+    if route["intent"] == "chat":
+        response = answer_agent_chat(user_input, repo_session)
+        display.assistant(response)
+        repo_session.message.append({"role": "user", "content": user_input})
+        repo_session.message.append({"role": "assistant", "content": response})
+        record_event(
+            repo_session,
+            {
+                "type": "agent_chat_response",
+                "text": response,
+                "route": route,
+            }
+        )
+        return True
+
+    if route["intent"] == "memory_query":
+        response = answer_memory_query(repo_session)
+        display.assistant(response)
+        record_event(
+            repo_session,
+            {
+                "type": "agent_memory_response",
+                "text": response,
+                "route": route,
+            }
+        )
+        return True
 
     display.agent_start(user_input)
 
     try:
-        result = run_graph_agent(user_input, repo_session)
+        result = run_graph_agent(
+            user_input,
+            repo_session,
+            write_allowed=route["write_allowed"],
+        )
     except Exception as e:
         display.error(f"Error running agent: {e}")
         return True
@@ -553,6 +569,57 @@ def handle_agent_input(user_input: str, repo_session: RepoSession) -> bool:
     display.agent_success()
     display.agent_result(result)
     return True
+
+
+def answer_agent_chat(user_input: str, repo_session: RepoSession) -> str:
+    messages = [
+        SystemMessage(
+            content=(
+                "You are Repo-Agent in agent chat mode. Answer conversationally and briefly. "
+                "Do not claim you inspected or modified repository files. "
+                "If the user asks for repository work, say they should ask directly and you can route it."
+            )
+        )
+    ]
+
+    for message in repo_session.message[-6:]:
+        role = message.get("role")
+        content = message.get("content", "")
+        if role == "user":
+            messages.append(HumanMessage(content=content))
+
+    messages.append(HumanMessage(content=user_input))
+    response = build_chat_model().invoke(messages)
+    return response.content.strip()
+
+
+def answer_memory_query(repo_session: RepoSession) -> str:
+    if not repo_session.session_id or not repo_session.repo_path:
+        return "No active session is available yet."
+
+    events = read_session_events(repo_session.repo_path, repo_session.session_id)
+    if not events:
+        return "I do not have any session events recorded yet."
+
+    recent_events = events[-12:]
+    lines = ["Here is what I can see from the current session:"]
+
+    for event in recent_events:
+        event_type = event.get("type", "event")
+        created_at = event.get("created_at", "")
+        text = event.get("text")
+
+        if text:
+            lines.append(f"- {created_at} `{event_type}`: {text}")
+        else:
+            summary = {
+                key: value
+                for key, value in event.items()
+                if key not in {"files"} and key != "created_at"
+            }
+            lines.append(f"- {created_at} `{event_type}`: {summary}")
+
+    return "\n".join(lines)
 
 
 

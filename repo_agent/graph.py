@@ -1,6 +1,5 @@
 from langgraph.graph import END, StateGraph
 
-from repo_agent.agent import handle_user_task
 from repo_agent.context_engine import build_basic_context
 from repo_agent.graph_state import AgentGraphState
 from repo_agent.session import RepoSession
@@ -37,7 +36,7 @@ Result:
 
 
 
-def build_agent_graph(repo_session: RepoSession):
+def build_agent_graph(repo_session: RepoSession, write_allowed: bool = True):
     graph = StateGraph(AgentGraphState)
 
     def build_context_node(state: AgentGraphState) -> AgentGraphState:
@@ -109,14 +108,15 @@ def build_agent_graph(repo_session: RepoSession):
                 current_step=state["task"],
                 completed_results=completed_results,
                 repo_session=repo_session,
+                include_write=write_allowed,
             )
             return {
-            "result": result,
+            "result": str(result.get("content", "")),
             "step_results": [
                 {
                     "step": state["task"],
                     "status": "completed",
-                    "result": result,
+                    "result": str(result.get("content", "")),
                 }
             ]
         }
@@ -137,6 +137,7 @@ def build_agent_graph(repo_session: RepoSession):
                     current_step=current_step,
                     completed_results=completed_results,
                     repo_session=repo_session,
+                    include_write=write_allowed,
                 )
 
                 step_result = str(step_execution["content"])
@@ -211,10 +212,9 @@ def build_agent_graph(repo_session: RepoSession):
 
     return graph.compile()
 
-def run_graph_agent(task: str, repo_session: RepoSession) -> str:
-    app = build_agent_graph(repo_session)
+def run_graph_agent(task: str, repo_session: RepoSession, write_allowed: bool = True) -> str:
+    app = build_agent_graph(repo_session, write_allowed=write_allowed)
     result = app.invoke({"task": task})
     return result.get("summary", "No summary generated.") or result.get("result", "No result generated.")   
-
 
 
