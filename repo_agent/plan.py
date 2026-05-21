@@ -6,20 +6,31 @@ from repo_agent.llm import build_chat_model, build_reasoning_model
 from repo_agent.session import RepoSession
 
 import re
+import json
 
 
-PLANNER_AGENT_PROMPT = """You are a planning agent for repository coding tasks.
+PLANNER_PROMPT = """You are a reasoning planner for repository coding tasks.
 
-You may inspect the repository using read-only tools.
-Your job is to produce a concise execution plan.
+Given the task, initial context, and scout findings, produce a structured execution plan.
+
+Return only valid JSON. Do not wrap it in markdown fences.
+
+Schema:
+{
+  "steps": [
+    {
+      "text": "A concrete execution step."
+    }
+  ]
+}
 
 Rules:
-- Do not modify files.
-- Do not run commands.
-- Do not claim you executed the plan.
-- Use tools only when needed to understand the task.
-- Mention files likely to inspect or modify.
 - Produce 3-6 concrete steps.
+- Each step must be actionable by a coding agent.
+- Mention likely files to inspect or modify when useful.
+- Do not include headings, introductions, explanations, or conclusions.
+- Do not claim you executed anything.
+- Do not include meta steps like "Create the execution plan".
 """
 
 SCOUT_PROMPT = """You inspect a repository to gather planning context.
@@ -38,6 +49,59 @@ Rules:
 - Mention likely files to inspect or modify.
 - Do not claim you executed anything.
 """
+
+"""
+help function
+"""
+def _strip_json_fence(content: str) -> str:
+    text = content.strip()
+
+    if text.startswith("```json"):
+        text = text.removeprefix("```json").strip()
+    elif text.startswith("```"):
+        text = text.removeprefix("```").strip()
+    
+    if text.endswith("```"):
+        text = text.removesuffix("```").strip()
+    
+    return text
+
+
+"""
+help function to parse the plan response
+"""
+def parse_json_plan_response(plan: str) -> list[dict[str, str]]:
+    text = _strip_json_fence(plan)
+
+    data = json.loads(text)
+
+    if isinstance(data, list):
+        raw_steps = data
+    elif isinstance(data,dict):
+        raw_steps = data.get("steps", [])
+    else:
+        raise ValueError("Invalid plan format: expected a JSON object with a 'steps' list or a JSON array.")
+    
+    steps : list[dict[str, str]] = []
+
+    for item in raw_steps:
+        if isinstance(item, str):
+            step_text = item.strip()
+        elif isinstance(item, dict):
+            step_text = item.get("text", "").strip()
+        else:
+            continue
+
+        if step_text:
+            steps.append({"text": step_text, "status": "pending"})
+        
+    if not steps:
+        raise ValueError("No valid steps found in the plan response.")
+    
+    return steps
+
+
+
 
 def create_plan(task: str, context: str, repo_session: RepoSession) -> str:
     tools = build_langchain_tools(repo_session, include_write=False)
@@ -92,7 +156,7 @@ Create the execution plan.
 
 """Parse a plan into a list of steps."""
 
-def parse_plan_steps(plan: str) -> list[dict[str, str]]:
+def parse_markdown_plan_steps(plan: str) -> list[dict[str, str]]:
     steps: list[dict[str, str]] = []
 
     for raw_line in plan.splitlines():
@@ -117,3 +181,10 @@ def parse_plan_steps(plan: str) -> list[dict[str, str]]:
         steps.append({"text": line, "status": "pending"})
 
     return steps
+
+
+def parse_plan_steps(plan: str) -> list[dict[str, str]]:
+    try:
+        return parse_json_plan_response(plan)
+    except Exception:
+        return parse_markdown_plan_steps(plan)
