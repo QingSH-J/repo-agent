@@ -16,6 +16,12 @@ class StepResult(TypedDict):
     result: str
 
 
+class TokenUsage(TypedDict):
+    intput_tokens: int
+    output_tokens: int
+    total_tokens: int
+
+
 
 class AgentGraphState(TypedDict, total=False):
     task: str
@@ -32,3 +38,4 @@ class AgentGraphState(TypedDict, total=False):
     verification: dict[str, object]
     step_results: list[StepResult]
     summary: str
+    token_usage: TokenUsage

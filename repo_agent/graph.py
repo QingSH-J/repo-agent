@@ -1,6 +1,5 @@
 from langgraph.graph import END, StateGraph
 
-from repo_agent.agent import handle_user_task
 from repo_agent.context_engine import build_basic_context
 from repo_agent.graph_state import AgentGraphState
 from repo_agent.session import RepoSession
@@ -9,7 +8,7 @@ from repo_agent.plan import create_plan, parse_plan_steps
 from repo_agent.verifier import verify_working_tree
 from repo_agent.summarizer import summarize_agent_run
 from repo_agent.executor import execute_plan_step
-
+from repo_agent.token_usage import empty_token_usage, add_token_usage
 """
 help function for formatting step results into a readable summary
 """
@@ -37,7 +36,7 @@ Result:
 
 
 
-def build_agent_graph(repo_session: RepoSession):
+def build_agent_graph(repo_session: RepoSession, write_allowed: bool = True):
     graph = StateGraph(AgentGraphState)
 
     def build_context_node(state: AgentGraphState) -> AgentGraphState:
@@ -95,6 +94,8 @@ def build_agent_graph(repo_session: RepoSession):
     def act_node(state: AgentGraphState) -> AgentGraphState:
         display.agent_step("act", "executing plan steps with verification")
 
+        #for token usage
+        token_usage = empty_token_usage()
         plan_steps = [dict(step) for step in state.get("plan_steps", [])]
         step_results: list[dict[str, str]] = []
         completed_results: list[str] = []
@@ -107,14 +108,15 @@ def build_agent_graph(repo_session: RepoSession):
                 current_step=state["task"],
                 completed_results=completed_results,
                 repo_session=repo_session,
+                include_write=write_allowed,
             )
             return {
-            "result": result,
+            "result": str(result.get("content", "")),
             "step_results": [
                 {
                     "step": state["task"],
                     "status": "completed",
-                    "result": result,
+                    "result": str(result.get("content", "")),
                 }
             ]
         }
@@ -128,14 +130,21 @@ def build_agent_graph(repo_session: RepoSession):
             display.plan_checklist(plan_steps, title="Plan Progress")
 
             try:
-                step_result = execute_plan_step(
+                step_execution = execute_plan_step(
                     task=state["task"],
                     context=state.get("context", ""),
                     plan=state.get("plan", ""),
                     current_step=current_step,
                     completed_results=completed_results,
                     repo_session=repo_session,
+                    include_write=write_allowed,
                 )
+
+                step_result = str(step_execution["content"])
+                step_usage = step_execution.get("token_usage", {})
+                token_usage = add_token_usage(token_usage, step_usage)
+
+
             except Exception as e:
                 error_message = f"Error executing step: {e}"
                 plan_steps[index]["status"] = "failed"
@@ -167,6 +176,7 @@ def build_agent_graph(repo_session: RepoSession):
             "result": format_step_results(step_results),
             "step_results": step_results,
             "plan_steps": plan_steps,
+            "token_usage": token_usage,
         }
 
 
@@ -183,6 +193,9 @@ def build_agent_graph(repo_session: RepoSession):
             result=state.get('result', ''),
             verification_report=state.get('verification', {}),
         )
+        usage = state.get("token_usage", empty_token_usage())
+        display.token_usage(usage)
+
         return {"summary": summary}
     
     graph.add_node("build_context", build_context_node)
@@ -199,10 +212,9 @@ def build_agent_graph(repo_session: RepoSession):
 
     return graph.compile()
 
-def run_graph_agent(task: str, repo_session: RepoSession) -> str:
-    app = build_agent_graph(repo_session)
+def run_graph_agent(task: str, repo_session: RepoSession, write_allowed: bool = True) -> str:
+    app = build_agent_graph(repo_session, write_allowed=write_allowed)
     result = app.invoke({"task": task})
     return result.get("summary", "No summary generated.") or result.get("result", "No result generated.")   
-
 
 

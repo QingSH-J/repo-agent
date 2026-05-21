@@ -3,6 +3,8 @@ from langchain.agents import create_agent
 from repo_agent.lc_tools import build_langchain_tools
 from repo_agent.llm import build_chat_model
 from repo_agent.session import RepoSession
+from repo_agent.token_usage import empty_token_usage, extract_agent_usage
+
 
 EXECUTOR_PROMPT = """You are Repo-Agent's step executor.
 
@@ -25,12 +27,16 @@ def execute_plan_step(
         plan: str,
         current_step: str,
         completed_results: list[str],
-        repo_session: RepoSession
-) -> str:
+        repo_session: RepoSession,
+        include_write: bool = True,
+) -> dict[str, object]:
     if not repo_session.is_repo_loaded:
-        return "No repository loaded. Use /open <repo_path> to load a repository."
+        return {
+            "content": "No repository loaded. Use /open <repo_path> to load a repository.",
+            "token_usage": empty_token_usage(),
+        }
     
-    tools = build_langchain_tools(repo_session, include_write=True)
+    tools = build_langchain_tools(repo_session, include_write=include_write)
     agent = create_agent(
         model=build_chat_model(),
         tools=tools,
@@ -70,4 +76,9 @@ Execute the current step based on the above information and return the result.
             ]
         }
     )
-    return result["messages"][-1].content.strip()   
+
+    final_result = result["messages"][-1]
+    return {
+        "content": final_result.content.strip(),
+        "token_usage": extract_agent_usage(result)
+    }   
