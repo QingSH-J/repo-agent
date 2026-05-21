@@ -423,3 +423,17 @@ def verification_report(report: dict[str, object]) -> None:
                 border_style="green",
             )
         )
+
+"""
+For displaying token usage metrics in a readable format
+"""
+def token_usage(usage: dict[str, int]) -> None:
+    table = Table(show_header=False, box=None)
+    table.add_column("Metric", style="cyan", no_wrap=True)
+    table.add_column("Tokens", justify="right")
+
+    table.add_row("Input Tokens", str(usage.get("input_tokens", 0)))
+    table.add_row("Output Tokens", str(usage.get("output_tokens", 0)))
+    table.add_row("Total Tokens", str(usage.get("total_tokens", 0)))
+
+    console.print(Panel(table, title="Token Usage", border_style="blue"))

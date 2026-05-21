@@ -391,7 +391,8 @@ def handle_command(user_input: str, repo_session: RepoSession) -> bool:
             return True
         
         if not args:
-            display.warning("Usage: /agent <task_description>")
+            repo_session.agent_mode = True
+            display.success("Agent mode enabled. Enter a task for the agent to perform.")
             return True
         
         record_event(
@@ -421,6 +422,15 @@ def handle_command(user_input: str, repo_session: RepoSession) -> bool:
         display.agent_result(result)
         
 
+        return True
+    
+    """return to normal mode"""
+    if command == "/back":
+        if repo_session.agent_mode:
+            repo_session.agent_mode = False
+            display.success("Exited agent mode.")
+        else:
+            display.warning("Not in agent mode.")
         return True
     
 
@@ -508,9 +518,41 @@ def record_event(repo_session: RepoSession, event: dict) -> None:
         event,
     )
 
+"""
+functio to handle agent mode input
+"""
+def handle_agent_input(user_input: str, repo_session: RepoSession) -> bool:
+    if not repo_session.is_repo_loaded:
+        display.warning("No repository loaded. Use /open <repo_path> to load a repository.")
+        return True
+    
+    record_event(
+        repo_session,
+        {
+            "type": "agent_task",
+            "text": user_input,
+        }
+    )
 
+    display.agent_start(user_input)
 
+    try:
+        result = run_graph_agent(user_input, repo_session)
+    except Exception as e:
+        display.error(f"Error running agent: {e}")
+        return True
+    
+    record_event(
+        repo_session,
+        {
+            "type": "agent_result",
+            "text": result,
+        }
+    )
 
+    display.agent_success()
+    display.agent_result(result)
+    return True
 
 
 
@@ -522,7 +564,8 @@ def main() -> None:
 
     while True:
         try:
-            user_input = prompt_session.prompt("> ").strip()
+            prompt_text = "Agent> " if repo_session.agent_mode else "> "
+            user_input = prompt_session.prompt(prompt_text).strip()
 
             if not user_input:
                 continue
@@ -532,7 +575,10 @@ def main() -> None:
                 if not should_continue:
                     break
             else:
-                handle_natural_language(user_input, repo_session)
+                if repo_session.agent_mode:
+                    handle_agent_input(user_input, repo_session)
+                else:
+                    handle_natural_language(user_input, repo_session)
 
         except KeyboardInterrupt:
             display.warning("Interrupted.")

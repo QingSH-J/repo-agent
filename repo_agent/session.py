@@ -6,6 +6,7 @@ class RepoSession:
         self.repo_files: list[str] = []
         self.repo_branch : str | None = None
         self.session_id : str | None = None
+        self.agent_mode: bool = False
 
     @property
     def is_repo_loaded(self) -> bool:
